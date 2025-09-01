@@ -1,0 +1,300 @@
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+  <title>ELOSUM KOŞSUN 💘</title>
+  <style>
+    :root {
+      --bg: #ffd1dc; /* pembe arka plan */
+      --fg: #ff3f8e; /* koyu pembe */
+      --fg-dark: #c52669;
+      --text: #6b1040;
+    }
+    html, body {
+      margin: 0;
+      height: 100%;
+      background: var(--bg);
+      color: var(--text);
+      font-family: Inter, system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial;
+      -webkit-user-select: none;
+      user-select: none;
+      touch-action: manipulation;
+    }
+    .wrap {
+      position: fixed;
+      inset: 0;
+      display: grid;
+      place-items: center;
+      padding: env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left);
+    }
+    canvas {
+      background: linear-gradient(180deg, #ffe6ee, #ffd1dc 60%);
+      border-radius: 24px;
+      box-shadow: 0 10px 30px rgba(0,0,0,.12);
+      max-width: 100vw;
+      max-height: 100vh;
+      image-rendering: pixelated;
+      cursor: pointer;
+    }
+    .hud {
+      position: fixed;
+      top: 16px; left: 50%; transform: translateX(-50%);
+      display: flex; gap: 10px; align-items: center;
+      background: rgba(255, 255, 255, 0.6);
+      padding: 8px 14px; border-radius: 999px; backdrop-filter: blur(8px);
+      font-weight: 700; letter-spacing: .3px;
+    }
+    .btnbar {
+      position: fixed; bottom: 20px; left: 50%; transform: translateX(-50%);
+      display: flex; gap: 12px;
+    }
+    .btn {
+      background: var(--fg);
+      color: white; border: none; border-radius: 999px;
+      padding: 10px 16px; font-size: 14px; font-weight: 700; letter-spacing: .2px;
+      box-shadow: 0 6px 16px rgba(255, 63, 142, .35);
+    }
+    .btn:active { transform: translateY(1px); }
+    .toast {
+      position: fixed; top: 50%; left: 50%; transform: translate(-50%, -50%);
+      background: rgba(255, 255, 255, 0.85);
+      padding: 16px 20px; border-radius: 16px; backdrop-filter: blur(8px);
+      text-align: center; font-weight: 700; line-height: 1.3;
+      box-shadow: 0 10px 30px rgba(0,0,0,.12);
+      max-width: min(90vw, 420px);
+    }
+    .hidden { display: none; }
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <canvas id="game" width="390" height="844" aria-label="ELOSUM KOŞUYOR"></canvas>
+  </div>
+
+  <div class="hud" id="hud">
+    <span>Skor: <b id="score">0</b></span>
+    <span>•</span>
+    <span>En İyi: <b id="best">0</b></span>
+  </div>
+
+  <div class="btnbar">
+    <button class="btn" id="pauseBtn">Duraklat</button>
+    <button class="btn" id="restartBtn">Yeniden Başlat</button>
+  </div>
+
+  <div class="toast" id="toast">
+    <div style="font-size:18px">ELOSUM İNTERNET YOKKEN DE MUTLU OLSUN 💘</div>
+    <div style="margin-top:6px; font-weight:600">Zıplamak için ekrana dokun Eloş 💞</div>
+    <div style="margin-top:8px; font-size:13px; opacity:.8">"BU KOŞU DÜNYANIN EN GÜZEL KIZI ELA İÇİN YAPILMIŞTIR 💞"</div>
+  </div>
+
+  <script>
+    const canvas = document.getElementById('game');
+    const ctx = canvas.getContext('2d');
+    const scoreEl = document.getElementById('score');
+    const bestEl  = document.getElementById('best');
+    const toast = document.getElementById('toast');
+    const pauseBtn = document.getElementById('pauseBtn');
+    const restartBtn = document.getElementById('restartBtn');
+
+    let DPR = Math.max(1, Math.min(2, window.devicePixelRatio || 1));
+
+    function fitCanvas() {
+      const vw = Math.min(window.innerWidth, 420);
+      const vh = Math.min(window.innerHeight, 920);
+      const targetRatio = 390/844;
+      let w = vw, h = vw / targetRatio;
+      if (h > vh) { h = vh; w = h * targetRatio; }
+
+      canvas.style.width = `${w}px`;
+      canvas.style.height = `${h}px`;
+
+      const cssW = Math.round(w);
+      const cssH = Math.round(h);
+      canvas.width = Math.round(cssW * DPR);
+      canvas.height = Math.round(cssH * DPR);
+      ctx.setTransform(DPR, 0, 0, DPR, 0, 0);
+
+      world.W = cssW; world.H = cssH;
+    }
+
+    // --- Game State -------------------------------------------------------
+    const world = {
+      W: 390, H: 844,
+      gravity: 0.6,
+      jump: -12,
+      groundH: 100,
+      speed: 6,
+      started: false,
+      paused: false,
+      over: false,
+      score: 0,
+      best: Number(localStorage.getItem('runner-love-best') || 0),
+    };
+    bestEl.textContent = world.best;
+
+    const player = { x: 80, y: 0, vy: 0, size: 40, onGround: false };
+    const obstacles = [];
+
+    function resetGame() {
+      world.started = false;
+      world.paused = false;
+      world.over = false;
+      world.score = 0;
+      player.y = world.H - world.groundH - player.size;
+      player.vy = 0;
+      player.onGround = true;
+      obstacles.length = 0;
+      scoreEl.textContent = 0;
+      toast.classList.remove('hidden');
+    }
+
+    // --- Input ------------------------------------------------------------
+    function jump() {
+      if (world.over) { resetGame(); return; }
+      world.started = true;
+      if (player.onGround) {
+        player.vy = world.jump;
+        player.onGround = false;
+      }
+      toast.classList.add('hidden');
+    }
+
+    window.addEventListener('keydown', (e) => {
+      if (e.code === 'Space' || e.code === 'ArrowUp') { e.preventDefault(); jump(); }
+      if (e.code === 'KeyP') togglePause();
+    }, { passive: false });
+    canvas.addEventListener('mousedown', jump);
+    canvas.addEventListener('touchstart', (e) => { e.preventDefault(); jump(); }, { passive: false });
+
+    function togglePause() {
+      if (world.over) return;
+      world.paused = !world.paused;
+      pauseBtn.textContent = world.paused ? 'Devam' : 'Duraklat';
+    }
+    pauseBtn.addEventListener('click', togglePause);
+    restartBtn.addEventListener('click', resetGame);
+
+    // --- Game Loop --------------------------------------------------------
+    let last = 0;
+    function loop(ts) {
+      requestAnimationFrame(loop);
+      const dt = Math.min(32, ts - last);
+      last = ts;
+      if (world.paused) return;
+      update(dt/16.67);
+      draw();
+    }
+
+    function update(scale) {
+      if (!world.started) return;
+
+      // Fizik
+      player.vy += world.gravity * scale;
+      player.y += player.vy * scale;
+
+      const groundY = world.H - world.groundH - player.size;
+      if (player.y >= groundY) {
+        player.y = groundY;
+        player.vy = 0;
+        player.onGround = true;
+      }
+
+      // Engelleri hareket ettir
+      for (let o of obstacles) {
+        o.x -= world.speed * scale;
+      }
+      if (obstacles.length && obstacles[0].x + obstacles[0].w < -20) obstacles.shift();
+      if (!obstacles.length || obstacles[obstacles.length - 1].x < world.W - 200) {
+        spawnObstacle();
+      }
+
+      // Çarpışma kontrol
+      for (let o of obstacles) {
+        if (player.x < o.x + o.w && player.x + player.size > o.x &&
+            player.y < o.y + o.h && player.y + player.size > o.y) {
+          return gameOver();
+        }
+      }
+
+      // Skor
+      world.score += 1;
+      scoreEl.textContent = world.score;
+    }
+
+    function spawnObstacle() {
+      const h = 40 + Math.random() * 40;
+      obstacles.push({
+        x: world.W + 20,
+        y: world.H - world.groundH - h,
+        w: 30 + Math.random()*20,
+        h: h
+      });
+    }
+
+    function gameOver() {
+      world.over = true; world.started = false;
+      if (world.score > world.best) { world.best = world.score; localStorage.setItem('runner-love-best', world.best); }
+      bestEl.textContent = world.best;
+      toast.innerHTML = `<div style="font-size:18px">ELOŞUM ÇARPTI AMA ÇOK TATLI 💞</div>
+      <div style="margin-top:6px">Skor: <b>${world.score}</b> • En İyi: <b>${world.best}</b></div>
+      <div style="margin-top:8px; font-size:13px; opacity:.85">Tekrar denemek için ekrana dokun aşkım 💞</div>`;
+      toast.classList.remove('hidden');
+    }
+
+    function draw() {
+      const W = world.W, H = world.H;
+      ctx.clearRect(0, 0, W, H);
+
+      // Zemin
+      ctx.fillStyle = '#ffc1d5';
+      ctx.fillRect(0, H - world.groundH, W, world.groundH);
+
+      // Şeritler
+      ctx.fillStyle = '#ffabc9';
+      for (let i = 0; i < W; i += 40) {
+        ctx.fillRect(i, H - 40, 20, 6);
+      }
+
+      // Engeller (tatlı pembe bloklar)
+      ctx.fillStyle = '#ff7aa9';
+      for (let o of obstacles) {
+        ctx.fillRect(o.x, o.y, o.w, o.h);
+        ctx.strokeStyle = '#c94a7c';
+        ctx.strokeRect(o.x, o.y, o.w, o.h);
+      }
+
+      // Oyuncu (kalp karakter)
+      drawHeart(player.x + player.size/2, player.y + player.size/2, player.size/2);
+    }
+
+    function drawHeart(x, y, r) {
+      ctx.save();
+      ctx.translate(x, y);
+      const s = r/16;
+      ctx.scale(s, s);
+
+      const grd = ctx.createLinearGradient(-20, -20, 20, 20);
+      grd.addColorStop(0, '#ff4d94');
+      grd.addColorStop(1, '#ff1f7a');
+      ctx.fillStyle = grd;
+
+      ctx.beginPath();
+      ctx.moveTo(0, 6);
+      ctx.bezierCurveTo(12, -10, 30, -2, 0, 26);
+      ctx.bezierCurveTo(-30, -2, -12, -10, 0, 6);
+      ctx.closePath();
+      ctx.fill();
+
+      ctx.restore();
+    }
+
+    // --- Init -------------------------------------------------------------
+    fitCanvas();
+    resetGame();
+    requestAnimationFrame(loop);
+    window.addEventListener('resize', () => { DPR = Math.max(1, Math.min(2, window.devicePixelRatio || 1)); fitCanvas(); });
+  </script>
+</body>
+</html>
