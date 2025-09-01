@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
-  <title>Balon Patlat ELOSUM 💘</title>
+  <title>Eloş Suika Game 💘</title>
   <style>
     :root {
       --bg: #ffd1dc;
@@ -46,131 +46,146 @@
       pointer-events: none;
       opacity: 0;
       transform: translate(-50%, 0);
-      animation: floatUp 1.5s forwards;
+      animation: floatUp 2s forwards;
     }
     @keyframes floatUp {
       0%   { opacity: 1; transform: translate(-50%, 0); }
-      80%  { opacity: 1; transform: translate(-50%, -60px); }
-      100% { opacity: 0; transform: translate(-50%, -80px); }
+      80%  { opacity: 1; transform: translate(-50%, -80px); }
+      100% { opacity: 0; transform: translate(-50%, -120px); }
     }
   </style>
 </head>
 <body>
-  <canvas id="game" width="390" height="844"></canvas>
+  <canvas id="game" width="390" height="700"></canvas>
   <div class="hud">Skor: <span id="score">0</span></div>
 
   <script>
     const canvas = document.getElementById('game');
     const ctx = canvas.getContext('2d');
     const scoreEl = document.getElementById('score');
-    let DPR = Math.max(1, Math.min(2, window.devicePixelRatio || 1));
 
-    function fitCanvas() {
-      const vw = Math.min(window.innerWidth, 420);
-      const vh = Math.min(window.innerHeight, 920);
-      const ratio = 390/844;
-      let w = vw, h = vw/ratio;
-      if (h > vh) { h = vh; w = h*ratio; }
-      canvas.style.width = `${w}px`;
-      canvas.style.height = `${h}px`;
-      canvas.width = Math.round(w * DPR);
-      canvas.height = Math.round(h * DPR);
-      ctx.setTransform(DPR, 0, 0, DPR, 0, 0);
-      world.W = w; world.H = h;
-    }
-
-    const world = { W: 390, H: 844 };
-    let balloons = [];
+    const world = { W: 390, H: 700, gravity: 0.4 };
+    let hearts = [];
+    let nextHeartSize = 0;
     let score = 0;
 
     const messages = [
       "Seni çok seviyorum Eloş 💞",
       "Kalbim hep seninle 💘",
-      "Dünyamın en güzeli 💕",
-      "Canım Eloşum 💖",
+      "Aşkım benim 💖",
+      "Canım Eloş 💕",
       "Her şeyim sensin 💓"
     ];
 
-    function spawnBalloon() {
-      const x = Math.random() * (world.W - 50) + 25;
-      balloons.push({
-        x, y: world.H + 50,
-        r: 25 + Math.random()*15,
-        speed: 1 + Math.random()*1.5,
-        color: Math.random() > 0.5 ? "#ff4d94" : "#ff7aa9"
-      });
+    function randomMessage(x,y){
+      const msg = document.createElement("div");
+      msg.className = "msg";
+      msg.textContent = messages[Math.floor(Math.random()*messages.length)];
+      msg.style.left = x+"px";
+      msg.style.top = y+"px";
+      document.body.appendChild(msg);
+      setTimeout(()=>msg.remove(),2000);
     }
 
-    function update() {
-      for (let b of balloons) {
-        b.y -= b.speed;
+    const heartLevels = [
+      {r:15, color:"#ff7aa9"},
+      {r:25, color:"#ff4d94"},
+      {r:35, color:"#ff1f7a"},
+      {r:50, color:"#e60073"},
+      {r:70, color:"#c2185b"}
+    ];
+
+    class Heart {
+      constructor(x,y,level){
+        this.x=x; this.y=y;
+        this.vx=0; this.vy=0;
+        this.level=level;
+        this.r=heartLevels[level].r;
+        this.color=heartLevels[level].color;
+        this.merged=false;
       }
-      balloons = balloons.filter(b => b.y + b.r > -20);
-      if (Math.random() < 0.02) spawnBalloon();
-    }
-
-    function draw() {
-      ctx.clearRect(0,0,world.W,world.H);
-      for (let b of balloons) {
+      draw(){
+        ctx.save();
+        ctx.translate(this.x,this.y);
+        const grd=ctx.createLinearGradient(-this.r,-this.r,this.r,this.r);
+        grd.addColorStop(0,this.color);
+        grd.addColorStop(1,"#b30059");
+        ctx.fillStyle=grd;
         ctx.beginPath();
-        ctx.arc(b.x, b.y, b.r, 0, Math.PI*2);
-        ctx.fillStyle = b.color;
+        ctx.moveTo(0, this.r*0.3);
+        ctx.bezierCurveTo(this.r, -this.r*0.8, this.r*1.6, this.r*0.5, 0, this.r*1.4);
+        ctx.bezierCurveTo(-this.r*1.6, this.r*0.5, -this.r, -this.r*0.8, 0, this.r*0.3);
         ctx.fill();
-        // ip
-        ctx.beginPath();
-        ctx.moveTo(b.x, b.y+b.r);
-        ctx.lineTo(b.x, b.y+b.r+20);
-        ctx.strokeStyle = "#c94a7c";
-        ctx.stroke();
+        ctx.restore();
+      }
+      update(){
+        this.vy+=world.gravity;
+        this.x+=this.vx;
+        this.y+=this.vy;
+
+        // duvarlar
+        if(this.x-this.r<0){ this.x=this.r; this.vx*=-0.5;}
+        if(this.x+this.r>world.W){ this.x=world.W-this.r; this.vx*=-0.5;}
+
+        // zemin
+        if(this.y+this.r>world.H){ this.y=world.H-this.r; this.vy*=-0.3; this.vx*=0.98;}
       }
     }
 
-    function loop() {
+    function spawnHeart(x){
+      hearts.push(new Heart(x,50,nextHeartSize));
+      nextHeartSize=Math.floor(Math.random()*2); // küçük boyutlardan gelsin
+    }
+
+    function mergeCheck(){
+      for(let i=0;i<hearts.length;i++){
+        for(let j=i+1;j<hearts.length;j++){
+          const a=hearts[i], b=hearts[j];
+          const dx=a.x-b.x, dy=a.y-b.y;
+          const dist=Math.sqrt(dx*dx+dy*dy);
+          if(dist<a.r+b.r-5 && a.level===b.level && !a.merged && !b.merged){
+            const newLevel=Math.min(a.level+1, heartLevels.length-1);
+            const nx=(a.x+b.x)/2, ny=(a.y+b.y)/2;
+            hearts.push(new Heart(nx,ny,newLevel));
+            a.merged=b.merged=true;
+            score+=10*(newLevel+1);
+            scoreEl.textContent=score;
+            randomMessage(nx,ny);
+          }
+        }
+      }
+      hearts=hearts.filter(h=>!h.merged);
+    }
+
+    function update(){
+      for(let h of hearts) h.update();
+      mergeCheck();
+    }
+
+    function draw(){
+      ctx.clearRect(0,0,world.W,world.H);
+      for(let h of hearts) h.draw();
+    }
+
+    function loop(){
       requestAnimationFrame(loop);
       update();
       draw();
     }
 
-    function popBalloon(x, y) {
-      for (let i=balloons.length-1;i>=0;i--) {
-        const b = balloons[i];
-        const dx = x - b.x, dy = y - b.y;
-        if (dx*dx + dy*dy < b.r*b.r) {
-          balloons.splice(i,1);
-          score++;
-          scoreEl.textContent = score;
-          showMessage(x, y);
-          break;
-        }
-      }
-    }
-
-    function showMessage(x, y) {
-      const msg = document.createElement("div");
-      msg.className = "msg";
-      msg.textContent = messages[Math.floor(Math.random()*messages.length)];
-      msg.style.left = x + "px";
-      msg.style.top = y + "px";
-      document.body.appendChild(msg);
-      setTimeout(()=> msg.remove(), 1500);
-    }
-
-    canvas.addEventListener("click", e=>{
-      const rect = canvas.getBoundingClientRect();
-      const x = (e.clientX-rect.left)/rect.width*world.W;
-      const y = (e.clientY-rect.top)/rect.height*world.H;
-      popBalloon(x,y);
+    canvas.addEventListener("click",e=>{
+      const rect=canvas.getBoundingClientRect();
+      const x=(e.clientX-rect.left)/rect.width*world.W;
+      spawnHeart(x);
     });
-    canvas.addEventListener("touchstart", e=>{
-      const rect = canvas.getBoundingClientRect();
-      const touch = e.touches[0];
-      const x = (touch.clientX-rect.left)/rect.width*world.W;
-      const y = (touch.clientY-rect.top)/rect.height*world.H;
-      popBalloon(x,y);
-    }, {passive:false});
+    canvas.addEventListener("touchstart",e=>{
+      const rect=canvas.getBoundingClientRect();
+      const t=e.touches[0];
+      const x=(t.clientX-rect.left)/rect.width*world.W;
+      spawnHeart(x);
+    },{passive:false});
 
-    fitCanvas();
-    window.addEventListener("resize", ()=>{DPR=Math.max(1,Math.min(2,window.devicePixelRatio||1)); fitCanvas();});
+    spawnHeart(world.W/2);
     loop();
   </script>
 </body>
